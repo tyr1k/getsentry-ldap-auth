@@ -9,7 +9,6 @@ from sentry.models import (
     UserOption,
 )
 
-
 def _get_effective_sentry_role(group_names):
     role_priority_order = [
         'member',
@@ -23,7 +22,7 @@ def _get_effective_sentry_role(group_names):
     if not group_names or not role_mapping:
         return None
 
-    applicable_roles = [role for role, groups in role_mapping.items() if group_names.intersection(groups)]
+    applicable_roles = [role for role, groups in role_mapping.items() if set(group_names).intersection(set(groups))]
 
     if not applicable_roles:
         return None
@@ -31,7 +30,6 @@ def _get_effective_sentry_role(group_names):
     highest_role = [role for role in role_priority_order if role in applicable_roles][-1]
 
     return highest_role
-
 
 class SentryLdapBackend(LDAPBackend):
     def get_or_create_user(self, username, ldap_user):
@@ -74,8 +72,8 @@ class SentryLdapBackend(LDAPBackend):
             return model
 
         # If the user is already a member of an organization, leave them be
-        orgs = OrganizationMember.objects.filter(user=user)
-        if orgs != None and len(orgs) > 0:
+        orgs = OrganizationMember.objects.filter(user_id=user.id)
+        if orgs.exists():
             return model
 
         # Find the default organization
@@ -86,14 +84,14 @@ class SentryLdapBackend(LDAPBackend):
 
         member_role = _get_effective_sentry_role(ldap_user.group_names)
         if not member_role:
-            member_role = getattr(settings, 'AUTH_LDAP_SENTRY_ORGANIZATION_ROLE_TYPE', None)
+            member_role = getattr(settings, 'AUTH_LDAP_SENTRY_ORGANIZATION_ROLE_TYPE', 'member')
 
         has_global_access = getattr(settings, 'AUTH_LDAP_SENTRY_ORGANIZATION_GLOBAL_ACCESS', False)
 
         # Add the user to the organization with global access
         OrganizationMember.objects.create(
             organization=organizations[0],
-            user=user,
+            user_id=user.id,
             role=member_role,
             has_global_access=has_global_access,
             flags=getattr(OrganizationMember.flags, 'sso:linked'),
@@ -108,3 +106,4 @@ class SentryLdapBackend(LDAPBackend):
             )
 
         return model
+
